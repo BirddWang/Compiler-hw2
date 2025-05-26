@@ -37,7 +37,7 @@ fnumber ({digit}*\.{digit}+)
 <STRCOND>(\\\"|[^\"])* { yylval.s_val = strdup(yytext);
                 return STRING_LIT;
             }
-\r?\n       {;}
+\r?\n       { ; }
 "str"       { return STR; }
 ">>"        { return RSHIFT; }
 "<<"        { return LSHIFT; }
@@ -105,7 +105,7 @@ fnumber ({digit}*\.{digit}+)
                 if (once++) {
                     yyterminate();
                 }
-                yylineno++;
+                // yylineno++;
                 ;
             }
 [ \t]+      {;}
