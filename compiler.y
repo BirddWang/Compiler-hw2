@@ -66,7 +66,6 @@
 %token FUNC RETURN BREAK
 %token ARROW AS IN DOTDOT RSHIFT LSHIFT
 %token UPLUS UMINUS
-
 /* Token with return, which need to sepcify type */
 %token <i_val> INT_LIT
 %token <f_val> FLOAT_LIT
@@ -77,6 +76,7 @@
 %type <s_val> Type
 %type <s_val> Expression
 %type <s_val> Identifier
+%type <s_val> ArrayList
 
 /* 運算符優先級和結合性 */
 %left LOR
@@ -215,6 +215,7 @@ VariableDeclStmt
         {
             insert_symbol($3, $5, 1, yylineno); // 默認類型為 i32
         }
+
 ;
 
 VariableAssignStmt
@@ -222,14 +223,13 @@ VariableAssignStmt
         {
             int idx = lookup_symbol($1);
             if (idx >= 0) {
+                printf("ASSIGN\n");
                 if (symbol_table[idx].mut == 0) {
-                    printf("ERROR: Cannot assign to immutable variable `%s`\n", $1);
+                    printf("error:%d: cannot borrow immutable borrowed content `x` as mutable\n", yylineno);
                     HAS_ERROR = true;
-                } else {
-                    printf("ASSIGN\n");
                 }
             } else {
-                printf("ERROR: Identifier `%s` not found\n", $1);
+                printf("error:%d: undefined: %s\n", yylineno, $1);
                 HAS_ERROR = true;
             }
         }
@@ -304,6 +304,10 @@ Expression
     | Expression '>' Expression
         {
             $$ = "bool";
+            if (strcmp($1, $3) != 0) {
+                printf("error:%d: invalid operation: GTR (mismatched types %s and %s)\n", yylineno, $1, $3);
+                HAS_ERROR = true;
+            }
             printf("GTR\n");
         }
     | Expression LEQ Expression
@@ -318,12 +322,29 @@ Expression
         }
     | Expression LSHIFT Expression
         {
-            $$ = $1;
+            $$ = "i32";
+            if (strcmp($1, "i32") != 0) {
+                printf("error:%d: invalid operation: LSHIFT (mismatched types %s and i32)\n", yylineno, $1);
+                HAS_ERROR = true;
+            }
+            else if (strcmp($3, "i32") != 0) {
+                printf("error:%d: invalid operation: LSHIFT (mismatched types i32 and %s)\n", yylineno, $3);
+                HAS_ERROR = true;
+                
+            }
             printf("LSHIFT\n");
         }
     | Expression RSHIFT Expression
         {
-            $$ = $1;
+            $$ = "i32";
+            if (strcmp($1, "i32") != 0) {
+                printf("error:%d: invalid operation: RSHIFT (mismatched types i32 and %s)\n", yylineno, $1);
+                HAS_ERROR = true;
+            }
+            else if (strcmp($3, "i32") != 0) {
+                printf("error:%d: invalid operation: RSHIFT (mismatched types %s and i32)\n", yylineno, $3);
+                HAS_ERROR = true;
+            }
             printf("RSHIFT\n");
         }
     | Expression '+' Expression
@@ -394,6 +415,10 @@ Expression
                 }
             }
         }
+    | Expression '[' Expression ']'
+        {
+            $$ = "array";
+        }
     | Identifier
         {
             $$ = $1;
@@ -408,8 +433,9 @@ Identifier
                 printf("IDENT (name=%s, address=%d)\n", $1, symbol_table[idx].addr);
                 $$ = symbol_table[idx].type;
             } else {
-                printf("ERROR: Identifier `%s` not found\n", $1);
+                printf("error:%d: undefined: %s\n", yylineno, $1);
                 HAS_ERROR = true;
+                $$ = "undefined";
             }
         }
     | INT_LIT
@@ -442,6 +468,16 @@ Identifier
             printf("bool FALSE\n");
             $$ = "bool";
         }
+    | '[' ArrayList ']'
+        {
+            // printf("ArrayList\n");
+            $$ = "array";  // 可以根據需要修改
+        }
+;
+
+ArrayList
+    : ArrayList ',' Expression
+    | Expression
 ;
 
 Type
@@ -452,6 +488,12 @@ Type
     | '&' STR
         {
             $$ = "str";
+        }
+    | '[' Type ';' INT_LIT ']'
+        {
+            // printf("Array type: %s[%d]\n", $2, $4);
+            printf("INT_LIT %d\n", $4);
+            $$ = "array";  // 可以根據需要修改
         }
 ;
 
