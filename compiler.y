@@ -65,6 +65,7 @@
 %token PRINT PRINTLN
 %token FUNC RETURN BREAK
 %token ARROW AS IN DOTDOT RSHIFT LSHIFT
+%token UPLUS UMINUS
 
 /* Token with return, which need to sepcify type */
 %token <i_val> INT_LIT
@@ -75,6 +76,7 @@
 /* Nonterminal with return, which need to sepcify type */
 %type <s_val> Type
 %type <s_val> Expression
+%type <s_val> Identifier
 
 /* 運算符優先級和結合性 */
 %left LOR
@@ -86,8 +88,7 @@
 %left LSHIFT RSHIFT
 %left '+' '-'
 %left '*' '/' '%'
-%right '!' '~'
-%right UMINUS
+%right '!' '~' UPLUS UMINUS
 
 /* Yacc will start at this nonterminal */
 %start Program
@@ -142,7 +143,57 @@ StatementList
 
 Statement
     : VariableDeclStmt
+    | VariableAssignStmt
     | PrintStmt ';'
+    | '{' 
+        {
+            scope_level++;
+            create_symbol();
+        }
+      StatementList '}'
+        {
+            printf("\n");
+            dump_symbol();
+            scope_level--;
+        }
+    | IF Expression 
+      '{' 
+        {
+            scope_level++;
+            create_symbol();
+        }
+        StatementList 
+      '}'
+        {
+            printf("\n");
+            dump_symbol();
+            scope_level--;
+        }
+    | ELSE 
+      '{' 
+        {
+            scope_level++;
+            create_symbol();
+        }
+        StatementList 
+      '}'
+        {
+            printf("\n");
+            dump_symbol();
+            scope_level--;
+        }
+    | WHILE Expression
+     '{'
+        {
+            scope_level++;
+            create_symbol();
+        }
+        StatementList '}'
+        {
+            printf("\n");
+            dump_symbol();
+            scope_level--;
+        }
     | ';'
     | /* empty */
 ;
@@ -152,17 +203,130 @@ VariableDeclStmt
         {
             insert_symbol($2, $4, 0, yylineno);
         }
+    | LET MUT ID ':' Type '=' Expression ';'
+        {
+            insert_symbol($3, $5, 1, yylineno);
+        }
+    | LET MUT ID ':' Type
+        {
+            insert_symbol($3, $5, 1, yylineno);
+        }
+    | LET MUT ID '=' Expression ';'
+        {
+            insert_symbol($3, $5, 1, yylineno); // 默認類型為 i32
+        }
 ;
+
+VariableAssignStmt
+    : ID '=' Expression ';'
+        {
+            int idx = lookup_symbol($1);
+            if (idx >= 0) {
+                if (symbol_table[idx].mut == 0) {
+                    printf("ERROR: Cannot assign to immutable variable `%s`\n", $1);
+                    HAS_ERROR = true;
+                } else {
+                    printf("ASSIGN\n");
+                }
+            } else {
+                printf("ERROR: Identifier `%s` not found\n", $1);
+                HAS_ERROR = true;
+            }
+        }
+    | ID ADD_ASSIGN Expression ';'
+        {
+            printf("ADD_ASSIGN\n");
+        }
+    | ID SUB_ASSIGN Expression ';'
+        {
+            printf("SUB_ASSIGN\n");
+        }
+    | ID MUL_ASSIGN Expression ';'
+        {
+            printf("MUL_ASSIGN\n");
+        }
+    | ID DIV_ASSIGN Expression ';'
+        {
+            printf("DIV_ASSIGN\n");
+        }
+    | ID REM_ASSIGN Expression ';'
+        {
+            printf("REM_ASSIGN\n");
+        }
 
 PrintStmt 
     : PRINTLN '('  Expression  ')'
         {
             printf("PRINTLN %s\n", $3);
         }
+    | PRINT '(' Expression ')'
+        {
+            printf("PRINT %s\n", $3);
+        }
 ;
 
 Expression
-    : Expression '+' Expression
+    : Expression LOR Expression
+        {
+            $$ = "bool";
+            printf("LOR\n");
+        }
+    | Expression LAND Expression
+        {
+            $$ = "bool";
+            printf("LAND\n");
+        }
+    | Expression '|' Expression
+        {
+            $$ = "i32";
+            printf("BIT_OR\n");
+        }
+    | Expression '&' Expression
+        {
+            $$ = "i32";
+            printf("BIT_AND\n");
+        }
+    | Expression EQL Expression
+        {
+            $$ = "bool";
+            printf("EQL\n");
+        }
+    | Expression NEQ Expression
+        {
+            $$ = "bool";
+            printf("NEQ\n");
+        }
+    | Expression '<' Expression
+        {
+            $$ = "bool";
+            printf("LSS\n");
+        }
+    | Expression '>' Expression
+        {
+            $$ = "bool";
+            printf("GTR\n");
+        }
+    | Expression LEQ Expression
+        {
+            $$ = "bool";
+            printf("LEQ\n");
+        }
+    | Expression GEQ Expression
+        {
+            $$ = "bool";
+            printf("GEQ\n");
+        }
+    | Expression LSHIFT Expression
+        {
+            $$ = $1;
+            printf("LSHIFT\n");
+        }
+    | Expression RSHIFT Expression
+        {
+            $$ = $1;
+            printf("RSHIFT\n");
+        }
+    | Expression '+' Expression
         {
             $$ = $1;
             printf("ADD\n");
@@ -187,12 +351,65 @@ Expression
             $$ = $1;
             printf("REM\n");
         }
-    | ID
+    | '!' Expression %prec '!'
+        {
+            $$ = "bool";
+            printf("NOT\n");
+        } 
+    | '~' Expression %prec '~'
+        {
+            $$ = $2;
+            printf("BIT_NOT\n");
+        }
+    | '+' Expression %prec UPLUS
+        {
+            $$ = $2;
+            printf("POS\n");
+        }
+    | '-' Expression %prec UMINUS
+        {
+            $$ = $2;
+            printf("NEG\n");
+        }
+    | '(' Expression ')'
+        {
+            $$ = $2;
+        }
+    | Expression AS Type
+        {
+            if (strcmp($1, "i32") == 0) {
+                if(strcmp($3, "f32") == 0) {
+                    printf("i2f\n");
+                }
+                else {
+                    printf("i2i\n");
+                }
+            }
+            else if (strcmp($1, "f32") == 0) {
+                if(strcmp($3, "i32") == 0) {
+                    printf("f2i\n");
+                }
+                else {
+                    printf("f2f\n");
+                }
+            }
+        }
+    | Identifier
+        {
+            $$ = $1;
+        }
+;
+
+Identifier
+    : ID
         {
             int idx = lookup_symbol($1);
             if (idx >= 0) {
                 printf("IDENT (name=%s, address=%d)\n", $1, symbol_table[idx].addr);
                 $$ = symbol_table[idx].type;
+            } else {
+                printf("ERROR: Identifier `%s` not found\n", $1);
+                HAS_ERROR = true;
             }
         }
     | INT_LIT
@@ -210,9 +427,20 @@ Expression
             printf("STRING_LIT \"%s\"\n", $2);
             $$ = "str";
         }
-    | '(' Expression ')'
+    | '"' '"'
         {
-            $$ = $2;
+            printf("STRING_LIT \"\"\n");
+            $$ = "str";
+        }
+    | TRUE
+        {
+            printf("bool TRUE\n");
+            $$ = "bool";
+        }
+    | FALSE
+        {
+            printf("bool FALSE\n");
+            $$ = "bool";
         }
 ;
 
@@ -221,6 +449,10 @@ Type
     | FLOAT  { $$ = "f32"; }
     | BOOL   { $$ = "bool"; }
     | STR    { $$ = "str"; }
+    | '&' STR
+        {
+            $$ = "str";
+        }
 ;
 
 %%
@@ -289,6 +521,7 @@ static void dump_symbol() {
         "Index", "Name", "Mut","Type", "Addr", "Lineno", "Func_sig");
     
     int index = 0;
+    int count = 0;
     for (int i = 0; i < symbol_count; i++) {
         if (symbol_table[i].scope == scope_level) {
             if (strcmp(symbol_table[i].type, "func") == 0) {
@@ -302,6 +535,8 @@ static void dump_symbol() {
                     symbol_table[i].type, symbol_table[i].addr, 
                     symbol_table[i].line, "-");
             }
+            count++;
         }
     }
+    symbol_count = symbol_count - count;
 }
